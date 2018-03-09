@@ -26,6 +26,8 @@ DEFAULT_TEST_DATA_PATH = os.path.join('data', 'test')
 
 use_cache = 1
 
+import sys
+
 def get_im_cv2_mod(filename, img_rows, img_cols, color_type=1):
     """Returns rotated and resized image matrixes.
 
@@ -41,6 +43,10 @@ def get_im_cv2_mod(filename, img_rows, img_cols, color_type=1):
     M = cv2.getRotationMatrix2D((img.shape[1]/2, img.shape[0]/2), rotate, 1)
     img = cv2.warpAffine(img, M, (img.shape[1], img.shape[0]))
     resized = cv2.resize(img, (img_cols, img_rows), interpolation=cv2.INTER_LINEAR)
+    # return resized.astype(np.float16)
+    # print('resized dtype:', resized.dtype)
+    # print('resized shape:', resized.shape)
+    # print('resized size:', resized.nbytes)
     return resized
 
 def get_driver_data(filename=DEFAULT_DRIVER_FILE):
