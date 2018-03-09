@@ -197,6 +197,7 @@ tags
 
 cache/
 model/
-data/
+data
+data/*
 result/
 .vscode/
