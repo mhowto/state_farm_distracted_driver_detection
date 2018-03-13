@@ -187,6 +187,47 @@ class Vgg16V1(object):
                 # _x = np.transpose(_x, [0,1,2,3])
             it += 1
             loss, _ = sess.run([self.loss, self.optimizer], feed_dict={self.images: _x, self.labels: _y})
+            if it < 11:
+                print('Iter {} loss: {}'.format(it, loss))
+            if it % 100 == 0:
+                print('Iter {} loss: {}'.format(it, loss))
+    
+    def predict(self, sess, x, batch_size=1024):
+        predicts = []
+        for _x in BatchIterator(x, batch_size=batch_size, mode='test'):
+            # if self.data_format == 'channels_first':
+                # _x = np.transpose(_x, [0,2,3,1])
+            logits = sess.run(self.outputs, feed_dict={self.images: _x})
+            predicts.append(logits)
+        return np.concatenate(predicts, axis=0)
+     
+class Vgg16V2(object):
+    def __init__(self, img_rows, img_cols, color_type, learning_rate=0.001, data_format='channels_last'):
+        self.data_format = data_format
+
+        self.images = tf.placeholder(tf.float32, [None, img_rows, img_cols, 3], name='images')
+        self.labels =  tf.placeholder(tf.uint8, [None, 10], name='labels')
+
+        self.vgg16 = Vgg16('data/vgg16.npy')
+        self.vgg16.build(self.images)
+
+        self.flatten = tf.layers.flatten(self.vgg16.pool5)
+        self.fc1 = tf.layers.dense(self.flatten, 4096, tf.nn.relu)
+        self.fc2 = tf.layers.dense(self.fc1, 4096, tf.nn.relu)
+        self.outputs = tf.layers.dense(self.fc2, 10, activation=tf.nn.softmax)
+
+        self.loss = tf.losses.softmax_cross_entropy(self.labels, logits=self.outputs)
+        self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
+
+    def fit(self, sess, x, y, batch_size=1024, nb_epoch=20):
+        it = 0
+        for _x, _y in BatchIterator((x, y), batch_size=batch_size, epoch=nb_epoch):
+            # if self.data_format == 'channels_first':
+                # _x = np.transpose(_x, [0,1,2,3])
+            it += 1
+            loss, _ = sess.run([self.loss, self.optimizer], feed_dict={self.images: _x, self.labels: _y})
+            if it < 11:
+                print('Iter {} loss: {}'.format(it, loss))
             if it % 100 == 0:
                 print('Iter {} loss: {}'.format(it, loss))
     
@@ -203,7 +244,7 @@ class Vgg16V1(object):
 def run_transfer_single():
     #input image dimensions
     img_rows, img_cols = 224, 224
-    batch_size = 32
+    batch_size = 128
     nb_epoch = 20
     random_state = 51
     color_type = 3
@@ -242,7 +283,8 @@ def run_transfer_single():
         print(stat)
 
     with tf.Graph().as_default():
-        vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first')
+        vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first', learning_rate=0.0001)
+        #vgg16v1 = Vgg16V2(img_rows, img_cols, color_type, data_format='channels_first')
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
 
