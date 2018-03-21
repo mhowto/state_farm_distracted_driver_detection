@@ -11,7 +11,7 @@ class BatchIterator(object):
         self.indexs = np.arange(self._size)
 
         if shuffle:
-            self.indexs = np.random.shuffle(self.indexs)
+            np.random.shuffle(self.indexs)
 
         self.stop = epoch
         self._index = 0

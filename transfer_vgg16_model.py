@@ -141,15 +141,6 @@ def read_and_normalize_train_data2(img_rows, img_cols, color_type=1):
         print('Restore train from cache!')
         train_data, train_target, driver_id, unique_drivers = restore_all_train(img_rows, img_cols, color_type)
     
-    """
-    train_data = np.array(train_data, dtype='f')
-    train_target = np.array(train_target, dtype=np.uint8)
-    train_data = np.reshape(train_data, (train_data.shape[0], color_type, img_rows, img_cols))
-    train_target = to_categorical(train_target)
-    train_data /= 255
-    print('Train shape:', train_data.shape)
-    print(train_data.shape[0], 'train_samples')
-    """
     return train_data, train_target, driver_id, unique_drivers
 
 def read_and_normalize_test_data2(img_rows, img_cols, color_type=1):
@@ -176,19 +167,21 @@ class Vgg16V1(object):
         self.vgg16 = Vgg16('data/vgg16.npy')
         self.vgg16.build(self.images)
 
+        #self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax, kernel_initializer=tf.truncated_normal_initializer)
         self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax)
         self.loss = tf.losses.softmax_cross_entropy(self.labels, logits=self.outputs)
         self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
 
     def fit(self, sess, x, y, batch_size=1024, nb_epoch=20):
         it = 0
-        for _x, _y in BatchIterator((x, y), batch_size=batch_size, epoch=nb_epoch):
+        for _x, _y in BatchIterator((x, y), batch_size=batch_size, epoch=nb_epoch, shuffle=True):
             # if self.data_format == 'channels_first':
                 # _x = np.transpose(_x, [0,1,2,3])
             it += 1
             loss, _ = sess.run([self.loss, self.optimizer], feed_dict={self.images: _x, self.labels: _y})
-            if it < 11:
-                print('Iter {} loss: {}'.format(it, loss))
+            print('Iter {} loss: {}'.format(it, loss))
+            # if it < 11:
+                # print('Iter {} loss: {}'.format(it, loss))
             if it % 100 == 0:
                 print('Iter {} loss: {}'.format(it, loss))
     
@@ -244,7 +237,8 @@ class Vgg16V2(object):
 def run_transfer_single():
     #input image dimensions
     img_rows, img_cols = 224, 224
-    batch_size = 128
+    # batch_size = 128
+    batch_size = 32
     nb_epoch = 20
     random_state = 51
     color_type = 3
@@ -257,6 +251,7 @@ def run_transfer_single():
     print('train_target shape:', train_target.shape)
     print('dirver_id shape:', len(driver_id))
     print('unique_drivers shape:', len(unique_drivers))
+    print(train_data)
 
     unique_list_train = ['p002', 'p012', 'p014', 'p015', 'p016', 'p021', 'p022', 'p024',
                      'p026', 'p035', 'p039', 'p041', 'p042', 'p045', 'p047', 'p049',
@@ -283,15 +278,17 @@ def run_transfer_single():
         print(stat)
 
     with tf.Graph().as_default():
-        vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first', learning_rate=0.0001)
+        vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first', learning_rate=0.001)
         #vgg16v1 = Vgg16V2(img_rows, img_cols, color_type, data_format='channels_first')
         init = tf.global_variables_initializer()
         saver = tf.train.Saver()
 
         with tf.Session() as sess:
-            sess.run(init)
+            run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
+            sess.run(init, options=run_options)
             vgg16v1.fit(sess, X_train, Y_train, batch_size=batch_size)
-            predictions_valid = vgg16v1.predict(sess, X_valid)
+            print("fit done....................")
+            predictions_valid = vgg16v1.predict(sess, X_valid, batch_size=batch_size)
             loss = log_loss(Y_valid, predictions_valid)
             print('validate loss: {}'.format(loss))
             save_path = saver.save(sess, 'model/vgg16v1_model_{}.ckpt'.format(datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))

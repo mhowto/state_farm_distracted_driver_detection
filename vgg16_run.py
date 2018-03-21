@@ -12,11 +12,12 @@ import pandas as pd
 
 from sklearn.cross_validation import train_test_split
 from sklearn.cross_validation import KFold
-from keras.models import Sequential
+from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, \
                                        ZeroPadding2D
 from keras.layers.convolutional import Conv2D
+from keras import applications
 
 # from keras.layers.normalization import BatchNormalization
 # from keras.optimizers import Adam
@@ -25,6 +26,9 @@ from keras.utils import np_utils
 from keras.models import model_from_json
 # from sklearn.metrics import log_loss
 from numpy.random import permutation
+
+from starter import save_submission
+from functools import reduce
 
 
 np.random.seed(2016)
@@ -285,6 +289,28 @@ def copy_selected_drivers(train_data, train_target, driver_id, driver_list):
     index = np.array(index, dtype=np.uint32)
     return data, target, index
 
+def vgg_std16_model2(img_rows, img_cols, color_type=1):
+    #model = applications.VGG16(weights='imagenet', include_top=False, input_shape=(color_type, img_rows, img_cols))
+    #top_model = Sequential()
+    #top_model.add(Flatten(input_shape=model.output_shape[1:]))
+    #top_model.add(Dense(4096, activation='relu'))
+    #top_model.add(Dropout(0.5))
+    #top_model.add(Dense(10, activation='softmax'))
+    #sgd = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    #top_model.compile(optimizer=sgd, loss='categorical_crossentropy', )
+    #return top_model
+
+    #model.layers.pop()
+    v16 = applications.VGG16(weights='imagenet', include_top=True, input_shape=(color_type, img_rows, img_cols))
+
+    for l in v16.layers:
+        print(l.name)
+    x = v16.get_layer('fc2').output 
+    x = Dense(10, activation='softmax')(x)
+    sgd = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    model_final = Model(v16.input, outputs=x)
+    model_final.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=['accuracy'])
+    return model_final
 
 def vgg_std16_model(img_rows, img_cols, color_type=1):
     model = Sequential()
@@ -364,10 +390,11 @@ def run_cross_validation(nfolds=10, nb_epoch=10, split=0.2, modelStr=''):
         # print('Test drivers: ', unique_list_valid)
         # model = create_model_v1(img_rows, img_cols, color_type_global)
         # model = vgg_bn_model(img_rows, img_cols, color_type_global)
-        model = vgg_std16_model(img_rows, img_cols, color_type_global)
+        #model = vgg_std16_model(img_rows, img_cols, color_type_global)
+        model = vgg_std16_model2(img_rows, img_cols, color_type_global)
 
         model.fit(train_data, train_target, batch_size=batch_size,
-                  nb_epoch=nb_epoch,
+                  epochs=nb_epoch,
                   verbose=1,
                   validation_split=split,
                   shuffle=True)
@@ -406,7 +433,6 @@ def run_cross_validation(nfolds=10, nb_epoch=10, split=0.2, modelStr=''):
     test_res = merge_several_folds_mean(yfull_test, nfolds)
     create_submission(test_res, test_id, info_string)
 
-
 def test_model_and_submit(start=1, end=1, modelStr=''):
     img_rows, img_cols = 224, 224
     # batch_size = 64
@@ -421,7 +447,7 @@ def test_model_and_submit(start=1, end=1, modelStr=''):
     for index in range(start, end + 1):
         # Store test predictions
         model = read_model(index, modelStr)
-        test_prediction = model.predict(test_data, batch_size=128, verbose=1)
+        test_prediction = model.predict(test_data, batch_size=32, verbose=1)
         yfull_test.append(test_prediction)
 
     info_string = 'loss_' + modelStr \
@@ -433,10 +459,61 @@ def test_model_and_submit(start=1, end=1, modelStr=''):
     test_res = merge_several_folds_mean(yfull_test, end - start + 1)
     create_submission(test_res, test_id, info_string)
 
+def run_predict(data, nfolds, batch_size=32, model_str=''):
+    predictions_in_folds = []
+    for index in range(1, nfolds+1):
+        model = read_model(index, model_str)
+        p = model.predict(data, batch_size=batch_size, verbose=1)
+        predictions_in_folds.append(p)
+    predictions = merge_several_folds_mean(predictions_in_folds, nfolds)
+    return predictions
+
+def load_test_file_names():
+    path = os.path.join('..', 'input', 'imgs', 'test', '*.jpg')
+    files = glob.glob(path)
+    return files
+
+def chunks(lst, n):
+    n = max(1, n)
+    return (lst[i:i+n] for i in range(0, len(lst), n))
+
+def test_model_and_submit_split(img_rows, img_cols, color_type, splits=10):
+    files = load_test_file_names()
+    total_size = len(files)
+    file_chunks = chunks(files, total_size//splits)
+    
+    count = 0
+    predictions = []
+    test_id = []
+    for files in file_chunks:
+        X_test = []
+        X_test_id = []
+        for fl in files:
+            flbase = os.path.basename(fl)
+            img = get_im(fl, img_rows, img_cols, color_type)
+            X_test.append(img)
+            X_test_id.append(flbase)
+            count += 1
+        test_id.append(X_test_id)
+        X_test = np.array(X_test)
+        X_test = X_test.transpose((0,3,1,2))
+        print('Read {} images from {}'.format(count, total_size))
+        print('X_test.shape', X_test.shape)
+
+        predictions.append(run_predict(X_test, 2, batch_size=2, model_str='_vgg_16_2x20'))
+    predictions = np.concatenate(predictions, axis=0)
+    test_id = reduce(lambda x,y: x+y, test_id)
+    return predictions, test_id
+
+
 # nfolds, nb_epoch, split
-run_cross_validation(2, 20, 0.15, '_vgg_16_2x20')
+#run_cross_validation(2, 1, 0.15, '_vgg_16_2x20')
 
 # nb_epoch, split
 # run_one_fold_cross_validation(10, 0.1)
 
-# test_model_and_submit(1, 10, 'high_epoch')
+# test_model_and_submit(1, 2, 'high_epoch')
+
+if __name__ == '__main__':
+    p, ids = test_model_and_submit_split(224, 224, 3)
+    save_submission(ids, p)
