@@ -26,6 +26,7 @@ from keras.utils import np_utils
 from keras.models import model_from_json
 # from sklearn.metrics import log_loss
 from numpy.random import permutation
+from keras import backend as K
 
 from starter import save_submission
 from functools import reduce
@@ -464,6 +465,8 @@ def run_predict(data, nfolds, batch_size=32, model_str=''):
     for index in range(1, nfolds+1):
         model = read_model(index, model_str)
         p = model.predict(data, batch_size=batch_size, verbose=1)
+        del model
+        K.clear_session()
         predictions_in_folds.append(p)
     predictions = merge_several_folds_mean(predictions_in_folds, nfolds)
     return predictions
