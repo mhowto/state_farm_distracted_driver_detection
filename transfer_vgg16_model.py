@@ -162,7 +162,7 @@ class Vgg16V1(object):
         self.data_format = data_format
 
         self.images = tf.placeholder(tf.float32, [None, img_rows, img_cols, 3], name='images')
-        self.labels =  tf.placeholder(tf.uint8, [None, 10], name='labels')
+        self.labels = tf.placeholder(tf.uint8, [None, 10], name='labels')
 
         self.vgg16 = Vgg16('data/vgg16.npy')
         self.vgg16.build(self.images)
@@ -170,7 +170,8 @@ class Vgg16V1(object):
         #self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax, kernel_initializer=tf.truncated_normal_initializer)
         self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax)
         self.loss = tf.losses.softmax_cross_entropy(self.labels, logits=self.outputs)
-        self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
+        # self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
+        self.optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(self.loss)
 
     def fit(self, sess, x, y, batch_size=1024, nb_epoch=20):
         it = 0
