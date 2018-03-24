@@ -6,6 +6,8 @@ from functools import reduce
 
 import numpy as np
 from tqdm import tqdm
+from sklearn.cross_validation import train_test_split
+
 import pickle
 import tracemalloc
 import gc
@@ -157,6 +159,21 @@ def read_and_normalize_test_data2(img_rows, img_cols, color_type=1):
     
     return test_data, test_id
 
+def get_minibatches(x, y, minibatch_size, shuffle=True):
+    '''
+    Genreate the mini batches
+    '''
+    data_size = x.shape[0]
+    indicies = np.arange(data_size)
+    if shuffle:
+        np.random.shuffle(indicies)
+    for start_idx in range(0, data_size, minibatch_size):
+        idx = indicies[start_idx : start_idx + minibatch_size]
+        if y is not None:
+            yield x[idx], y[idx]
+        else:
+            yield x[idx]
+
 class Vgg16V1(object):
     def __init__(self, img_rows, img_cols, color_type, learning_rate=0.001, data_format='channels_last'):
         self.data_format = data_format
@@ -170,29 +187,51 @@ class Vgg16V1(object):
         #self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax, kernel_initializer=tf.truncated_normal_initializer)
         self.outputs = tf.layers.dense(self.vgg16.relu7, 10, activation=tf.nn.softmax)
         self.loss = tf.losses.softmax_cross_entropy(self.labels, logits=self.outputs)
+        self.correct_prediction = tf.equal(tf.argmax(self.outputs, 1), tf.argmax(self.labels, 1))
+        self.accuracy = tf.reduce_mean(tf.cast(self.correct_prediction, tf.float32))
+
         # self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.loss)
         self.optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9).minimize(self.loss)
 
-    def fit(self, sess, x, y, batch_size=1024, nb_epoch=20):
-        it = 0
-        for _x, _y in BatchIterator((x, y), batch_size=batch_size, epoch=nb_epoch, shuffle=True):
-            # if self.data_format == 'channels_first':
-                # _x = np.transpose(_x, [0,1,2,3])
-            it += 1
-            loss, _ = sess.run([self.loss, self.optimizer], feed_dict={self.images: _x, self.labels: _y})
-            print('Iter {} loss: {}'.format(it, loss))
-            # if it < 11:
-                # print('Iter {} loss: {}'.format(it, loss))
-            if it % 100 == 0:
-                print('Iter {} loss: {}'.format(it, loss))
+    def train_on_batch(self, sess, inputs_batch, labels_batch, is_training=True, dropout=1):
+        # feed = self.create_feed_dict(inputs_batch, labels_batch, is_training)
+        variables = [self.loss, self.correct_prediction, self.optimizer]
+        if not is_training:
+            variables[-1] = self.accuracy
+        loss, corr, _ = sess.run([self.loss, self.correct_prediction, self.optimizer],
+            feed_dict={self.images: inputs_batch, self.labels: labels_batch})
+        return loss, corr
+
+    def run_epoch(self, sess, batch_size, training_set, validation_set, dropout):
+        X_tr, Y_tr = training_set
+        X_val, Y_val = validation_set
+
+        with tqdm(get_minibatches(X_tr, Y_tr, batch_size, False)) as pbar:
+            for train_x, train_y in pbar:
+                loss, corr = self.train_on_batch(sess, train_x, train_y, True, dropout)
+                pbar.set_description('train_loss: {0:.3g}, train_acc: {1:.3g}'.format(loss, np.sum(corr) / train_x.shape[0]))
+
+        val_loss, val_corr = 0, 0
+        with tqdm(get_minibatches(X_val, Y_val, batch_size, False)) as pbar:
+            for val_x, val_y in pbar:
+                loss, corr = self.train_on_batch(sess, val_x, val_y, False)
+                val_loss += loss
+                val_corr += np.sum(corr)
+                pbar.set_description('val_loss: {0:.3g}, val_acc: {1:.3g}'.format(loss, np.sum(corr) / val_x.shape[0]))
+            print("Validation loss = {0:.3g} and accuracy = {1:.3g}".format(val_loss / X_val.shape[0], val_corr / X_val.shape[0]))
+        
+    def fit(self, sess, x, y, epoches=20, batch_size=32, split=0.2, dropout=1):
+        x_train, x_valid, y_train, y_valid = train_test_split(x, y, test_size=split, random_state=42)
+        for epoch in range(epoches):
+            print("\nEpoch {:} out of {:}".format(epoch + 1, epoches))
+            self.run_epoch(sess, batch_size, (x_train, y_train), (x_valid, y_valid), dropout)
     
     def predict(self, sess, x, batch_size=1024):
         predicts = []
-        for _x in BatchIterator(x, batch_size=batch_size, mode='test'):
-            # if self.data_format == 'channels_first':
-                # _x = np.transpose(_x, [0,2,3,1])
-            logits = sess.run(self.outputs, feed_dict={self.images: _x})
-            predicts.append(logits)
+        with tqdm(get_minibatches(x, None, batch_size, False)) as pbar:
+            for _x in pbar:
+                logits = sess.run(self.outputs, feed_dict={self.images: _x})
+                predicts.append(logits)
         return np.concatenate(predicts, axis=0)
      
 class Vgg16V2(object):
@@ -216,8 +255,6 @@ class Vgg16V2(object):
     def fit(self, sess, x, y, batch_size=1024, nb_epoch=20):
         it = 0
         for _x, _y in BatchIterator((x, y), batch_size=batch_size, epoch=nb_epoch):
-            # if self.data_format == 'channels_first':
-                # _x = np.transpose(_x, [0,1,2,3])
             it += 1
             loss, _ = sess.run([self.loss, self.optimizer], feed_dict={self.images: _x, self.labels: _y})
             if it < 11:
@@ -228,8 +265,6 @@ class Vgg16V2(object):
     def predict(self, sess, x, batch_size=1024):
         predicts = []
         for _x in BatchIterator(x, batch_size=batch_size, mode='test'):
-            # if self.data_format == 'channels_first':
-                # _x = np.transpose(_x, [0,2,3,1])
             logits = sess.run(self.outputs, feed_dict={self.images: _x})
             predicts.append(logits)
         return np.concatenate(predicts, axis=0)
@@ -252,31 +287,14 @@ def run_transfer_single():
     print('train_target shape:', train_target.shape)
     print('dirver_id shape:', len(driver_id))
     print('unique_drivers shape:', len(unique_drivers))
-    print(train_data)
 
-    unique_list_train = ['p002', 'p012', 'p014', 'p015', 'p016', 'p021', 'p022', 'p024',
-                     'p026', 'p035', 'p039', 'p041', 'p042', 'p045', 'p047', 'p049',
-                     'p050', 'p051', 'p052', 'p056', 'p061', 'p064', 'p066', 'p072',
-                     'p075']
-    # unique_list_train = ['p002', 'p012', 'p014']
-    X_train, Y_train = copy_selected_drivers(train_data, train_target, driver_id, unique_list_train)
-    print('X_train shape:', X_train.shape)
-    print('Y_train shape:', Y_train.shape)
-    unique_list_valid = ['p081']
-    X_valid, Y_valid = copy_selected_drivers(train_data, train_target, driver_id, unique_list_valid)
-    print('X_valid shape:', X_valid.shape)
-    print('Y_valid shape:', Y_valid.shape)
-
-    del train_data
-    del train_target
-    # gc.collect()
-
+    '''
     snapshot = tracemalloc.take_snapshot()
     top_stats = snapshot.statistics('lineno')
-
     print("[ Top 10 ]")
     for stat in top_stats[:10]:
         print(stat)
+    '''
 
     with tf.Graph().as_default():
         vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first', learning_rate=0.001)
@@ -287,19 +305,56 @@ def run_transfer_single():
         with tf.Session() as sess:
             run_options = tf.RunOptions(report_tensor_allocations_upon_oom = True)
             sess.run(init, options=run_options)
-            vgg16v1.fit(sess, X_train, Y_train, batch_size=batch_size)
+            vgg16v1.fit(sess, train_data, train_target, batch_size=batch_size)
             print("fit done....................")
-            predictions_valid = vgg16v1.predict(sess, X_valid, batch_size=batch_size)
-            loss = log_loss(Y_valid, predictions_valid)
-            print('validate loss: {}'.format(loss))
             save_path = saver.save(sess, 'model/vgg16v1_model_{}.ckpt'.format(datetime.now().strftime('%Y-%m-%d_%H:%M:%S')))
 
-    '''
-    test_data, test_id = read_and_normalize_test_data2(img_rows, img_cols, color_type=color_type)
-    print('test_data shape:', test_data.shape)
-    print('test_id shape:', test_id.shape)
-    '''
+def load_test_file_names():
+    path = os.path.join('..', 'input', 'imgs', 'test', '*.jpg')
+    files = glob.glob(path)
+    return files
 
+def chunks(lst, n):
+    n = max(1, n)
+    return (lst[i:i+n] for i in range(0, len(lst), n))
+
+def run_transfer_predict(model_name):
+    img_rows, img_cols = 224, 224
+    color_type = 3
+
+    tf.reset_default_graph()
+
+    files = load_test_file_names()
+    total_size = len(files)
+    file_chunks = chunks(files, total_size//10)
+
+    vgg16v1 = Vgg16V1(img_rows, img_cols, color_type, data_format='channels_first', learning_rate=0.001)
+    saver = tf.train.Saver()
+    
+    count = 0
+    predictions = []
+    test_id = []
+    with tf.Session() as sess:
+        saver.restore(sess, 'model/{}.ckpt'.format(model_name))
+        for chunk in file_chunks:
+            X_test = []
+            X_test_id = []
+            for fl in chunk:
+                flbase = os.path.basename(fl)
+                img = get_im_cv2_mod(fl, img_rows, img_cols, color_type)
+                count += 1
+                X_test.append(img)
+                X_test_id.append(flbase)
+            test_id.append(X_test_id)
+            X_test = np.array(X_test)
+            # X_test = X_test.transpose((0,3,1,2))
+            print('Read {} images from {}'.format(count, total_size))
+            print('X_test.shape', X_test.shape)
+            predictions.append(vgg16v1.predict(sess, X_test, batch_size=8))
+    predictions = np.concatenate(predictions, axis=0)
+    test_id = reduce(lambda x,y: x+y, test_id)
+    save_submission(test_id, predictions)
 
 if __name__ == '__main__':
-    run_transfer_single()
+    # run_transfer_single()
+    run_transfer_predict('vgg16v1_model_2018-03-23_13:05:22')

@@ -31,7 +31,7 @@ class Vgg16:
 
         # Convert RGB to BGR
         #red, green, blue = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
-        blue, red, green = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
+        blue, green, red = tf.split(axis=3, num_or_size_splits=3, value=rgb_scaled)
 
         bgr = tf.concat(axis=3, values=[
             blue - VGG_MEAN[0],
