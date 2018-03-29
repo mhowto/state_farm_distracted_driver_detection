@@ -27,6 +27,8 @@ def generate_data_by_keras():
     with open(os.path.join(io_dir, 'output'), 'wb') as f:
         np.save(f, output)
 
+generate_data_by_keras()
+
 
 class TestVgg16(unittest.TestCase):
     def test_io(self):
@@ -38,6 +40,7 @@ class TestVgg16(unittest.TestCase):
         outputs = np.load(os.path.join(io_dir, 'output'))
         with tf.Session() as sess:
             prob = sess.run(vgg16.prob, feed_dict={images: inputs})
-        self.assertEquals(outputs.shape, prob.shape)
-        error = np.sum(np.square(inputs - outputs))
+        self.assertEqual(outputs.shape, prob.shape)
+        error = np.sum(np.square(prob - outputs))
         print(error)
+        print(prob-outputs)
