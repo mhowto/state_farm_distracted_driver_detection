@@ -121,4 +121,4 @@ class Vgg16:
         return tf.constant(self.data_dict[name][1], name="biases")
 
     def get_fc_weight(self, name):
-return tf.constant(self.data_dict[name][0], name="weights")
+        return tf.constant(self.data_dict[name][0], name="weights")
