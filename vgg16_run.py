@@ -224,6 +224,7 @@ def read_and_normalize_and_shuffle_train_data(img_rows, img_cols,
     return train_data, train_target, driver_id, unique_drivers
 
 
+import time
 def read_and_normalize_test_data(img_rows=224, img_cols=224, color_type=1):
     cache_path = os.path.join('cache', 'test_r_' + str(img_rows) +
                               '_c_' + str(img_cols) + '_t_' +
@@ -237,6 +238,9 @@ def read_and_normalize_test_data(img_rows=224, img_cols=224, color_type=1):
 
     test_data = np.array(test_data, dtype=np.uint8)
 
+    print('test_data')
+    print(test_data)
+    time.sleep(3)
     if color_type == 1:
         test_data = test_data.reshape(test_data.shape[0], color_type,
                                       img_rows, img_cols)
