@@ -152,6 +152,20 @@ def read_and_normalize_test_data(img_rows, img_cols, color_type=1):
     test_data /= 255
     return test_data, test_id
 
+def read_and_normalize_test_data2(img_rows, img_cols, path, color_type=1):
+    cache_path = os.path.join('cache', 'test_r_' + str(img_rows) + '_c_' + str(img_cols) + '_t_' + str(color_type) + '_' + path + '.dat')
+    if not os.path.isfile(cache_path) or use_cache == 0:
+        test_data, test_id = load_test(img_rows, img_cols, color_type, path)
+        cache_data((test_data, test_id), cache_path)
+    else:
+        print('Restore train from cache!')
+        test_data, test_id = restore_data(cache_path)
+    
+    test_data = np.array(test_data, dtype='f')
+    test_data = test_data.reshape(test_data.shape[0], color_type, img_rows, img_cols)
+    test_data /= 255
+    return test_data, test_id
+
 def copy_selected_drivers(train_data, train_target, driver_id, driver_list):
     selected_index = []
     for i, driver in enumerate(driver_id):
