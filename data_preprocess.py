@@ -140,6 +140,7 @@ def read_and_normalize_train_data(img_rows, img_cols, color_type=1):
 
 def read_and_normalize_test_data(img_rows, img_cols, color_type=1):
     cache_path = os.path.join('cache', 'test_r_' + str(img_rows) + '_c_' + str(img_cols) + '_t_' + str(color_type) + '.dat')
+    print('cache_path:', cache_path)
     if not os.path.isfile(cache_path) or use_cache == 0:
         test_data, test_id = load_test(img_rows, img_cols, color_type)
         cache_data((test_data, test_id), cache_path)
@@ -183,3 +184,7 @@ def save_submission(image_ids, predictions):
             pred = predictions[i,...]
             row = [idx] + pred.tolist()
             writer.writerow(row)
+
+def split_partial_train_data(path, target_path, ration=0.2):
+    for c in os.listdir(path):
+        files =os.listfiles(os.path.join(path, c))
